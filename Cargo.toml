@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 hex = "0.4.3"
 regex = "1.10.3"
-
+getch-rs = "0.2"
+nix = {version = "0.28.0", features = ["term", "fs", "ioctl"]}
