@@ -1,4 +1,4 @@
-use getch_rs::{enable_echo_input, Getch, Key};
+use getch_rs::{Getch, Key};
 use hex;
 use nix::libc::{ioctl, TIOCSTI};
 use regex::Regex;
