@@ -30,10 +30,7 @@ pub fn read(pid: &str) {
         if let Some(caps) = re.captures(&buf) {
             if let Some(mat) = caps.get(1) {
                 let decoded_hex = hex::decode(mat.as_str()).expect("Failed to decode");
-                print!(
-                    "{}",
-                    String::from_utf8(decoded_hex).expect("Failed to encode")
-                );
+                io::stdout().write_all(&decoded_hex).expect("Pipe died");
                 io::stdout().flush().unwrap();
             }
         }
@@ -79,25 +76,29 @@ pub fn write(pid: &str) {
             Ok(Key::Ctrl('d')) => break,
             Ok(Key::Delete) => {
                 // This is actually backspace but the crate we are using is cooked
-                "\x08\x1b\x5b\x4b".chars().for_each(|x| write_char(tty, x));
+                write_str(tty, "\x08\x1b\x5b\x4b");
             }
             Ok(Key::Char(c)) => {
-                write_char(tty, c);
+                write_str(tty, &c.to_string());
             }
             _ => {}
         }
     }
 }
 
-fn write_char(tty: &str, c: char) {
+fn write_char(tty: &str, c: u8) {
     let file = std::fs::OpenOptions::new()
         .write(true)
         .open(tty)
-        .expect("Failed to open tty");
+        .expect("Failed to open tty"); // TODO: Don't panic when connection closes.
 
     let fd = file.as_raw_fd();
 
     unsafe {
         ioctl(fd, TIOCSTI, &c as *const _ as *const i8);
     }
+}
+
+fn write_str(tty: &str, s: &str) {
+    s.bytes().into_iter().for_each(|c| write_char(tty, c))
 }
