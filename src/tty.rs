@@ -4,7 +4,10 @@ use std::io::Write;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 
-pub fn read(pid: &str) {
+pub fn read(tty: &str) {
+    // TODO: Get the PID from the tty
+    let pid = pid_of(tty).expect("Failed to get PID");
+
     println!("Attaching to {}", pid);
 
     let mut child = Command::new("strace")
@@ -40,4 +43,29 @@ pub fn read(pid: &str) {
             break;
         }
     }
+}
+
+fn pid_of(tty: &str) -> Result<String, std::io::Error> {
+    // Given a tty or pty or pts, return the pid of the process that is using it
+    todo!("how do I do this?");
+}
+
+/// Given the pid of an sshd process, return the tty
+/// This only works for sshd because they expose the tty in the cmdline
+fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
+    // read /proc/$PID/cmdline
+    let cmdline = std::fs::read_to_string(format!("/proc/{}/cmdline", pid))?;
+
+    // format: /path/to/sshd: user@tty
+    let parts: Vec<&str> = cmdline.split('@').collect();
+
+    if parts.len() != 2 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Invalid cmdline",
+        ));
+    } else {
+        // prepend /dev/ to tty and return
+        Ok(format!("/dev/{}", parts[1]))
+    }    
 }
