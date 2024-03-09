@@ -87,6 +87,10 @@ pub fn write(tty: &str, echo: bool) {
             Ok(Key::Ctrl('p')) => continue, // TODO: tty phishing?
             Ok(Key::Ctrl('z')) => break,
             Ok(Key::Ctrl('d')) => break,
+            Ok(Key::Delete) => {
+                // This is actually backspace but the crate we are using is cooked
+                "\x08\x1b\x5b\x4b".chars().for_each(|x| write_char(tty, x));
+            }
             Ok(Key::Char(c)) => {
                 write_char(tty, c);
             }

@@ -8,5 +8,12 @@ fn main() {
         println!("Usage: sshspy PID");
         std::process::exit(1);
     }
-    tty::read(&args[1]);
+
+    tty::write(&args[1], true);
+}
+
+fn init(tty: &str) {
+    // Start reading strace stuff
+
+    // Open the channel to write
 }
