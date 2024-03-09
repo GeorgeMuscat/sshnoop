@@ -1,6 +1,5 @@
 use hex;
-use nix::ioctl_write_int;
-use nix::libc::ioctl;
+use nix::libc::{ioctl, TIOCSTI};
 use regex::Regex;
 use std::io::Write;
 use std::io::{self, BufRead, BufReader};
@@ -72,7 +71,7 @@ pub fn write(tty: &str, echo: bool) {
 
 
 fn write_char(tty: &str, c: char) {
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .open(tty)
         .expect("Failed to open tty");
@@ -80,6 +79,6 @@ fn write_char(tty: &str, c: char) {
     let fd = file.as_raw_fd();
 
     unsafe { 
-        ioctl(fd, libc::TIOCSTI, &c as *const _ as *const i8);
+        ioctl(fd, TIOCSTI, &c as *const _ as *const i8);
     }
 }
