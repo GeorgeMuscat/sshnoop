@@ -11,7 +11,7 @@ pub fn read(tty: &str) {
     println!("Attaching to {}", pid);
 
     let mut child = Command::new("strace")
-        .args(["-xx", "-s", "16384", "-p", pid, "-e", "read"])
+        .args(["-xx", "-s", "16384", "-p", &pid, "-e", "read"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -67,5 +67,5 @@ fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
     } else {
         // prepend /dev/ to tty and return
         Ok(format!("/dev/{}", parts[1]))
-    }    
+    }
 }
