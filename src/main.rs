@@ -9,11 +9,12 @@ fn main() {
         std::process::exit(1);
     }
 
-    tty::write(&args[1], true);
-}
+    let pid1 = args[1].clone();
+    let pid2 = args[1].clone();
 
-fn init(tty: &str) {
-    // Start reading strace stuff
+    let read_handle = std::thread::spawn(move || tty::read(&pid1));
+    let write_handle = std::thread::spawn(move || tty::write(&pid2));
 
-    // Open the channel to write
+    read_handle.join().unwrap();
+    write_handle.join().unwrap();
 }
