@@ -10,3 +10,5 @@ hex = "0.4.3"
 regex = "1.10.3"
 getch-rs = "0.2"
 nix = {version = "0.28.0", features = ["term", "fs", "ioctl"]}
+clap = { version = "4.5.2", features = ["derive"] }
+procfs = "0.16.0"
