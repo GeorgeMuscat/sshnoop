@@ -1,6 +1,6 @@
 use getch_rs::{Getch, Key};
 use hex;
-use nix::libc::{ioctl, TIOCSTI};
+use nix::libc::{ioctl, TIOCGPTN, TIOCSTI};
 use procfs::process::{self, Process};
 use regex::Regex;
 use std::collections::HashMap;
@@ -20,14 +20,10 @@ pub fn read(pid: &str) {
         .spawn()
         .expect("Failed to start strace command");
 
-    println!("{}", tty_of_sshd(pid).expect("Failed to open tty"));
+    // println!("{}", tty_of_sshd(pid).expect("Failed to open tty"));
+    // TODO: Don't panic when connection closes.
 
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .open(tty_of_sshd(pid).unwrap())
-        .expect("Failed to open tty"); // TODO: Don't panic when connection closes.
-
-    let fd = file.as_raw_fd();
+    let fd = fd_of_sshd_pts(pid).unwrap();
 
     let stderr = child.stderr.take().expect("Failed to capture stderr");
 
@@ -35,7 +31,7 @@ pub fn read(pid: &str) {
 
     // TODO: Need to figure out which exact file descriptor is being used
 
-    println!("{fd:?}");
+    // println!("{fd:?}");
 
     let re = Regex::new(&format!(r#"(?mU)read\({}, "(.*)""#, fd.to_string())).unwrap();
 
@@ -133,6 +129,60 @@ pub fn write(pid: &str) {
             _ => {}
         }
     }
+}
+
+fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
+    // let mut fd = String::new();
+    // let pts_desired = tty_of_sshd(pid).expect("Failed to get TTY");
+
+    let entries = std::fs::read_dir(format!("/proc/{}/fd", pid))?;
+
+    let mut fds = entries.map(|res| res.unwrap()).filter_map(|entry| {
+        let path = entry.path();
+        let link = std::fs::read_link(&path).expect("Failed to read link");
+        if link == std::path::Path::new("/dev/ptmx") {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .open(&path)
+                .expect("Failed to open tty");
+            let fd = file.as_raw_fd();
+            return Some(fd);
+        }
+        None
+    });
+
+    // let entry = entry?;
+
+    return Ok(fds.nth(1).unwrap());
+
+    // for entry in std::fs::read_dir(fo
+    //     format!("/proc/{}/fd", pid))? {
+    //     let entry = entry?;
+    //     let path = entry.path();
+    //     let link = std::fs::read_link(&path).expect("Failed to read link");
+    //     if link == std::path::Path::new("/dev/ptmx") {
+    //         let file = std::fs::OpenOptions::new()
+    //             .read(true)
+    //             .open(&path)
+    //             .expect("Failed to open tty");
+
+    //         let fd = file.as_raw_fd();
+    //         let mut pts = String::new();
+
+    //         dbg!(fd);
+    //         dbg!(&pts);
+    //         unsafe {
+    //             ioctl(fd, TIOCGPTN, &mut pts as *mut _ as *mut i32);
+    //         }
+    //         if pts == pts_desired {
+    //             return Ok(fd);
+    //         }
+    //     }
+    // }
+    // Err(std::io::Error::new(
+    //     std::io::ErrorKind::InvalidData,
+    //     "Failed to find pts",
+    // ))
 }
 
 fn write_char(tty: &str, c: u8) {
