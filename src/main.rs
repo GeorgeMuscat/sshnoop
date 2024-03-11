@@ -42,12 +42,20 @@ fn main() {
         return;
     }
 
-    let pid = if let Some(p) = pts_processes.pop() {
-        p.pid.to_string()
+    let pid: String;
+
+    if args.auto {
+        pid = if let Some(p) = pts_processes.pop() {
+            p.pid.to_string()
+        } else {
+            eprintln!("No TTY session to attach to");
+            return;
+        };
+    } else if args.pid != None {
+        pid = args.pid.unwrap();
     } else {
-        eprintln!("No TTY session to attach to");
         return;
-    };
+    }
 
     // Default to be the most recent sshd process
     let pid1 = pid.clone();
