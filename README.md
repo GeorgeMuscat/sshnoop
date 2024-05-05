@@ -1,10 +1,10 @@
-A rewrite of [SSHPry](https://github.com/nopernik/SSHPry) in Rust.
-
 sshnoop is designed to be a standalone binary that is used on linux endpoints to read and write to ongoing incoming SSH connections.
 
 The current features allow the user to specify a specific sshd pid, list all valid sshd sessions or automatically connect to the most recent connection.
 
 Our current testing has been done with root level access.
+
+The program doesn't allow for you to sshnoop on its parent sshd instance (if it exists).
 
 ## Usage Requirements
 
