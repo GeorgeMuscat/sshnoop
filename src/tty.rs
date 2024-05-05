@@ -1,5 +1,4 @@
 use getch_rs::{Getch, Key};
-use hex;
 use nix::libc::{ioctl, TIOCSTI};
 use regex::Regex;
 use std::io::Write;
@@ -100,5 +99,5 @@ fn write_char(tty: &str, c: u8) {
 }
 
 fn write_str(tty: &str, s: &str) {
-    s.bytes().into_iter().for_each(|c| write_char(tty, c))
+    s.bytes().for_each(|c| write_char(tty, c))
 }
