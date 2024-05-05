@@ -24,7 +24,7 @@ pub fn read(pid: &str) {
 
     let mut reader = BufReader::new(stderr);
 
-    let re = Regex::new(&format!(r#"(?mU)read\({}, "(.*)""#, fd.to_string())).unwrap();
+    let re = Regex::new(&format!(r#"(?mU)read\({}, "(.*)""#, fd)).unwrap();
 
     loop {
         let mut buf = String::new();
@@ -172,10 +172,9 @@ pub fn get_options() -> Vec<Process> {
                 // Find all sshd pts processes
                 let pid = proc.stat().unwrap().pid;
 
-                match Process::new(pid) {
-                    Ok(p) => pts_processes.push(p),
-                    Err(_) => (),
-                };
+                if let Ok(p) = Process::new(pid) {
+                    pts_processes.push(p)
+                }
             }
         }
     }
