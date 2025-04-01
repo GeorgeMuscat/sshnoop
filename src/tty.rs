@@ -1,6 +1,7 @@
 use getch_rs::{Getch, Key};
 use hex;
 use nix::libc::{ioctl, TIOCSTI};
+use libc::TIOCGPTN;
 use regex::Regex;
 use std::io::Write;
 use std::io::{self, BufRead, BufReader};
@@ -101,4 +102,40 @@ fn write_char(tty: &str, c: u8) {
 
 fn write_str(tty: &str, s: &str) {
     s.bytes().into_iter().for_each(|c| write_char(tty, c))
+}
+
+fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
+    // for each file in /proc/{pid}/fd
+    // if it's a symlink to /dev/ptmx
+    // use ioctl to get the slave pts
+    // if the slave pts is the same as the one we got from tty_of_sshd
+    // return the fd number
+    let mut fd = String::new();
+    let pts_desired = tty_of_sshd(pid).expect("Failed to get TTY");
+    
+    // for each file in /proc/{pid}/fd
+    for entry in std::fs::read_dir(format!("/proc/{}/fd", pid))? {
+        let entry = entry?;
+        let path = entry.path();
+        let link = std::fs::read_link(&path).expect("Failed to read link");
+        if link == std::path::Path::new("/dev/ptmx") {
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .open(&path)
+                .expect("Failed to open tty");
+
+            let fd = file.as_raw_fd();
+            let mut pts = String::new();
+            unsafe {
+                ioctl(fd, TIOCGPTN, &mut pts as *mut _ as *mut i32);
+            }
+            if pts == pts_desired {
+                return Ok(fd);
+            }
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        "Failed to find pts",
+    ))
 }
