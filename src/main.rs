@@ -1,17 +1,23 @@
-use clap::{ArgGroup, Parser};
+use clap::{Args, Parser};
 
 mod tty;
 
 #[derive(Parser)]
 // #[command(version, about, long_about = None)]
-#[clap(group(
-    ArgGroup::new("opts")
-        .required(true)
-        .args(&["pid", "auto", "list"]),
-))]
-struct Args {
+struct Cli {
+    #[command(flatten)]
+    opts: Opts,
+
+    /// Read-only mode. Unable to write anything to the target pts
+    #[arg(short, long, default_value_t = false)]
+    readonly: bool,
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct Opts {
     /// PID of the sshd pts process you want to sshnoop on
-    #[arg(short, long)]
+    #[arg(long)]
     pid: Option<String>,
 
     /// Automatically attach to the most recently created sshd pts process
@@ -24,11 +30,11 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    let cli = Cli::parse();
 
     let mut pts_processes = tty::get_options();
 
-    if args.list {
+    if cli.opts.list {
         pts_processes.iter().for_each(|p| {
             println!(
                 "PID: {} TTY: {} USER: {}",
@@ -40,28 +46,37 @@ fn main() {
         return;
     }
 
-    let pid: String;
-
-    if args.auto {
-        pid = if let Some(p) = pts_processes.pop() {
+    let pid = if cli.opts.auto {
+        if let Some(p) = pts_processes.pop() {
             p.pid.to_string()
         } else {
             eprintln!("No TTY session to attach to");
             return;
-        };
-    } else if args.pid.is_some() {
-        pid = args.pid.unwrap();
+        }
+    } else if cli.opts.pid.is_some() {
+        cli.opts.pid.unwrap()
     } else {
+        eprintln!("Invalid Args");
         return;
-    }
+    };
 
     // Default to be the most recent sshd process
-    let pid1 = pid.clone();
-    let pid2 = pid.clone();
+    let pid_read = pid.clone();
 
-    let read_handle = std::thread::spawn(move || tty::read(&pid1));
-    let write_handle = std::thread::spawn(move || tty::write(&pid2));
+    if cli.readonly {
+        println!("Connecting in readonly mode. Any input will not be reflected on the target tty. Use CTRL+C to exit.")
+    }
+
+    let read_handle = std::thread::spawn(move || tty::read(pid_read));
+
+    if !cli.readonly {
+        // TODO: Set up a pubsub message pipeline between the threads, so that we can ensure both threads
+        // close when the close command is sent i.e. CTRL+D
+        let write_handle = std::thread::spawn(move || tty::write(pid));
+        write_handle.join().unwrap();
+        dbg!("write joined");
+    }
 
     read_handle.join().unwrap();
-    write_handle.join().unwrap();
+    dbg!("read joined");
 }

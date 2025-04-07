@@ -8,7 +8,7 @@ use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 
-pub fn read(pid: &str) {
+pub fn read(pid: String) {
     println!("Attaching reader to {pid}");
 
     let mut child = Command::new("strace")
@@ -18,7 +18,7 @@ pub fn read(pid: &str) {
         .spawn()
         .expect("Failed to start strace command");
 
-    let fd = fd_of_sshd_pts(pid).unwrap();
+    let fd = fd_of_sshd_pts(&pid).unwrap();
 
     let stderr = child.stderr.take().expect("Failed to capture stderr");
 
@@ -81,8 +81,8 @@ pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
 }
 
 /// Takes a PID and writes to the stdin of the process
-pub fn write(pid: &str) {
-    let tty = &tty_of_sshd(pid).expect("Failed to get TTY");
+pub fn write(pid: String) {
+    let tty = &tty_of_sshd(&pid).expect("Failed to get TTY");
     println!("Attaching writer to {}", tty);
 
     let input = Getch::new();
@@ -115,7 +115,9 @@ fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
         .filter_map(|entry| {
             let path = entry.path();
             let link = std::fs::read_link(&path).expect("Failed to read link");
-            if link == std::path::Path::new("/dev/ptmx") {
+            if link == std::path::Path::new("/dev/ptmx")
+                || link == std::path::Path::new("/dev/pts/ptmx")
+            {
                 let filename = path.file_name().unwrap();
                 let fd: i32 = filename.to_string_lossy().parse::<i32>().unwrap();
                 return Some(fd);
