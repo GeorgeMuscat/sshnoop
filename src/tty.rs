@@ -1,9 +1,10 @@
 use getch_rs::{Getch, Key};
 use nix::libc::{ioctl, TIOCSTI};
-use procfs::process::{self, Process};
+use procfs::process::{self, FDTarget, Process};
 use regex::Regex;
 use std::io::Write;
 use std::io::{self, BufRead, BufReader};
+use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
@@ -201,6 +202,40 @@ fn find_sshd_parent(pid: i32) -> Option<i32> {
 
         if let Ok(stat) = process.stat() {
             return find_sshd_parent(stat.ppid);
+        }
+    }
+    None
+}
+
+fn pid_to_socket_address(pid: i32) -> Option<SocketAddr> {
+    // https://stackoverflow.com/questions/1980355/linux-api-to-determine-sockets-owned-by-a-process
+    // Get open fds in /proc/pid/fd and follow the links to get the sockets.
+    // Find an open socket with an inode that is listed next to a remote address in /proc/net/tcp
+    // Will need to parse /proc/net/tcp
+    if let Ok(process) = Process::new(pid) {
+        // Get all socket
+        if let Ok(fds) = process.fd() {
+            let socket_inodes = fds
+                .filter_map(|fd| match fd {
+                    Ok(f) => match f.target {
+                        FDTarget::Socket(inode) => Some(inode),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            // Iterate over the socket_inodes and check if any of them are found in the /proc/net/tcp
+            // Should only be one that is the outbound dst.
+            // TODO: Consider returning all SocketAddr that have an fd in /proc/pid/fd to their inode.
+            if let Some(entry) = process
+                .tcp()
+                .ok()?
+                .into_iter()
+                .find(|t| socket_inodes.contains(&t.inode))
+            {
+                return Some(entry.remote_address);
+            }
         }
     }
     None
