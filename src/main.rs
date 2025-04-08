@@ -20,6 +20,10 @@ struct Opts {
     #[arg(long)]
     pid: Option<String>,
 
+    /// PTS number of the target sshd pts process you want to sshnoop on
+    #[arg(long)]
+    pts: Option<String>,
+
     /// Automatically attach to the most recently created sshd pts process
     #[arg(short, long)]
     auto: bool,
@@ -55,6 +59,11 @@ fn main() {
         }
     } else if cli.opts.pid.is_some() {
         cli.opts.pid.unwrap()
+    } else if cli.opts.pts.is_some() {
+        // TODO: Translate pts to pid for other funcs. This could mean getting all options and picking one
+        pts_processes
+            .into_iter()
+            .find(|proc| proc.cmdline().expect("Zombie process"))
     } else {
         eprintln!("Invalid Args");
         return;
