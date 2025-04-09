@@ -9,6 +9,15 @@ use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 
+macro_rules! unwrap_or_return_false {
+    ( $e:expr ) => {
+        match $e {
+            Ok(x) => x,
+            Err(_) => return false,
+        }
+    };
+}
+
 pub fn read(pid: String) {
     println!("Attaching reader to {pid}");
 
@@ -49,7 +58,7 @@ pub fn read(pid: String) {
 
 /// Given the pid of an sshd process, return the tty
 /// This only works for sshd because they expose the tty in the cmdline
-pub fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
+pub fn pts_of_sshd(pid: &str) -> Result<String, std::io::Error> {
     let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))?;
 
     // format: /path/to/sshd: user@tty
@@ -63,7 +72,7 @@ pub fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
     }
 
     // prepend /dev/ to tty, trim '\0' and return
-    Ok(format!("/dev/{}", parts[1].trim_end_matches('\0')))
+    Ok(parts[1].trim_end_matches('\0').to_string())
 }
 
 pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
@@ -83,8 +92,8 @@ pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
 
 /// Takes a PID and writes to the stdin of the process
 pub fn write(pid: String) {
-    let tty = &tty_of_sshd(&pid).expect("Failed to get TTY");
-    println!("Attaching writer to {}", tty);
+    let pts = &pts_of_sshd(&pid).expect("Failed to get TTY");
+    println!("Attaching writer to {}", pts);
 
     let input = Getch::new();
 
@@ -95,11 +104,11 @@ pub fn write(pid: String) {
             Ok(Key::Ctrl('d')) => break,
             Ok(Key::Delete) => {
                 // This is actually backspace but the crate we are using is cooked
-                write_str(tty, "\x08\x1b\x5b\x4b");
+                write_str(pts, "\x08\x1b\x5b\x4b");
             }
-            Ok(Key::Ctrl('c')) => write_str(tty, "\x03"),
+            Ok(Key::Ctrl('c')) => write_str(pts, "\x03"),
             Ok(Key::Char(c)) => {
-                write_str(tty, &c.to_string());
+                write_str(pts, &c.to_string());
             }
             _ => {}
         }
@@ -207,7 +216,7 @@ fn find_sshd_parent(pid: i32) -> Option<i32> {
     None
 }
 
-fn pid_to_socket_address(pid: i32) -> Option<SocketAddr> {
+pub fn pid_to_socket_address(pid: i32) -> Option<SocketAddr> {
     // https://stackoverflow.com/questions/1980355/linux-api-to-determine-sockets-owned-by-a-process
     // Get open fds in /proc/pid/fd and follow the links to get the sockets.
     // Find an open socket with an inode that is listed next to a remote address in /proc/net/tcp
@@ -230,5 +239,17 @@ fn pid_to_socket_address(pid: i32) -> Option<SocketAddr> {
             .into_iter()
             .find(|t| socket_inodes.contains(&t.inode))?
             .remote_address,
+    )
+}
+
+pub fn pts_to_pid(pts: &str) -> Option<i32> {
+    Some(
+        get_options()
+            .into_iter()
+            .find(|proc| {
+                let cmd = unwrap_or_return_false!(proc.cmdline());
+                cmd[0].contains(&(format!("pts/{:?}", pts)))
+            })?
+            .pid,
     )
 }

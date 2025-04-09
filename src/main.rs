@@ -1,4 +1,7 @@
+use std::net::SocketAddr;
+
 use clap::{Args, Parser};
+use tabled::{settings::Style, Table, Tabled};
 
 mod tty;
 
@@ -33,20 +36,37 @@ struct Opts {
     list: bool,
 }
 
+#[derive(Tabled)]
+struct ListOptions {
+    #[tabled(rename = "PID")]
+    pid: i32,
+    #[tabled(rename = "PTS")]
+    pts: String,
+    #[tabled(rename = "USER")]
+    user: String,
+    #[tabled(rename = "REMOTE_ADDRESS")]
+    remote_address: SocketAddr,
+}
+
 fn main() {
     let cli = Cli::parse();
 
     let mut pts_processes = tty::get_options();
 
     if cli.opts.list {
-        pts_processes.iter().for_each(|p| {
-            println!(
-                "PID: {} TTY: {} USER: {}",
-                p.pid,
-                tty::tty_of_sshd(&p.pid.to_string()).expect("Failed to get TTY"),
-                &tty::get_pts_user(&p.pid.to_string()).expect("Failed to get user")
-            )
+        let options = pts_processes.iter().map(|p| ListOptions {
+            pid: p.pid,
+            pts: tty::pts_of_sshd(&p.pid.to_string())
+                .unwrap_or_else(|_| panic!("Failed to get pts for pid: {}", p.pid)),
+            user: tty::get_pts_user(&p.pid.to_string())
+                .unwrap_or_else(|_| panic!("Failed to get user for pid: {}", p.pid)),
+            remote_address: tty::pid_to_socket_address(p.pid)
+                .unwrap_or_else(|| panic!("Failed to get remote address for pid: {}", p.pid)),
         });
+
+        let mut table = Table::new(options);
+        table.with(Style::psql());
+        println!("{}", table);
         return;
     }
 
@@ -61,9 +81,12 @@ fn main() {
         cli.opts.pid.unwrap()
     } else if cli.opts.pts.is_some() {
         // TODO: Translate pts to pid for other funcs. This could mean getting all options and picking one
-        pts_processes
-            .into_iter()
-            .find(|proc| proc.cmdline().expect("Zombie process"))
+        if let Some(p) = tty::pts_to_pid(&cli.opts.pts.expect("Checked that value is Some")) {
+            p.to_string()
+        } else {
+            eprintln!("Invalid pts provided");
+            return;
+        }
     } else {
         eprintln!("Invalid Args");
         return;
