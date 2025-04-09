@@ -61,7 +61,7 @@ pub fn read(pid: String) {
 pub fn pts_of_sshd(pid: &str) -> Result<String, std::io::Error> {
     let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))?;
 
-    // format: /path/to/sshd: user@tty
+    // format: /path/to/sshd: user@pts/N
     let parts: Vec<&str> = cmdline.split('@').collect();
 
     if parts.len() != 2 {
@@ -71,7 +71,7 @@ pub fn pts_of_sshd(pid: &str) -> Result<String, std::io::Error> {
         ));
     }
 
-    // prepend /dev/ to tty, trim '\0' and return
+    // trim '\0' and return
     Ok(parts[1].trim_end_matches('\0').to_string())
 }
 
@@ -92,8 +92,8 @@ pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
 
 /// Takes a PID and writes to the stdin of the process
 pub fn write(pid: String) {
-    let pts = &pts_of_sshd(&pid).expect("Failed to get TTY");
-    println!("Attaching writer to {}", pts);
+    let pts_path = format!("/dev/{}", &pts_of_sshd(&pid).expect("Failed to get TTY"));
+    println!("Attaching writer to {}", pts_path);
 
     let input = Getch::new();
 
@@ -104,11 +104,11 @@ pub fn write(pid: String) {
             Ok(Key::Ctrl('d')) => break,
             Ok(Key::Delete) => {
                 // This is actually backspace but the crate we are using is cooked
-                write_str(pts, "\x08\x1b\x5b\x4b");
+                write_str(&pts_path, "\x08\x1b\x5b\x4b");
             }
-            Ok(Key::Ctrl('c')) => write_str(pts, "\x03"),
+            Ok(Key::Ctrl('c')) => write_str(&pts_path, "\x03"),
             Ok(Key::Char(c)) => {
-                write_str(pts, &c.to_string());
+                write_str(&pts_path, &c.to_string());
             }
             _ => {}
         }
@@ -141,10 +141,10 @@ fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
 }
 
 /// Writes char to the specified TTY using IOCTL
-fn write_char(tty: &str, c: u8) {
+fn write_char(pts_path: &str, c: u8) {
     let file = std::fs::OpenOptions::new()
         .write(true)
-        .open(tty)
+        .open(pts_path)
         .expect("Failed to open tty"); // TODO: Don't panic when connection closes.
 
     let fd = file.as_raw_fd();
@@ -154,8 +154,8 @@ fn write_char(tty: &str, c: u8) {
     }
 }
 
-fn write_str(tty: &str, s: &str) {
-    s.bytes().for_each(|c| write_char(tty, c))
+fn write_str(pts_path: &str, s: &str) {
+    s.bytes().for_each(|c| write_char(pts_path, c))
 }
 
 pub fn get_options() -> Vec<Process> {
@@ -248,7 +248,7 @@ pub fn pts_to_pid(pts: &str) -> Option<i32> {
             .into_iter()
             .find(|proc| {
                 let cmd = unwrap_or_return_false!(proc.cmdline());
-                cmd[0].contains(&(format!("pts/{:?}", pts)))
+                cmd[0].contains(&(format!("pts/{}", pts)))
             })?
             .pid,
     )

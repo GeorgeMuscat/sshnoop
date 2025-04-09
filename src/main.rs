@@ -78,7 +78,18 @@ fn main() {
             return;
         }
     } else if cli.opts.pid.is_some() {
-        cli.opts.pid.unwrap()
+        // Check that pid is in the options provided
+        let Ok(pid) = cli.opts.pid.unwrap().parse() else {
+            eprintln!("Unable to parse pid.");
+            return;
+        };
+
+        if pts_processes.iter().any(|p| p.pid == pid) {
+            pid.to_string()
+        } else {
+            eprintln!("pid is not a possible target.");
+            return;
+        }
     } else if cli.opts.pts.is_some() {
         // TODO: Translate pts to pid for other funcs. This could mean getting all options and picking one
         if let Some(p) = tty::pts_to_pid(&cli.opts.pts.expect("Checked that value is Some")) {
@@ -106,9 +117,8 @@ fn main() {
         // close when the close command is sent i.e. CTRL+D
         let write_handle = std::thread::spawn(move || tty::write(pid));
         write_handle.join().unwrap();
-        dbg!("write joined");
+        println!("disconnected writer");
+        println!("to disconnect reader, press ctrl+c");
     }
-
     read_handle.join().unwrap();
-    dbg!("read joined");
 }
