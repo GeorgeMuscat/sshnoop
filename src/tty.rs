@@ -1,14 +1,24 @@
 use getch_rs::{Getch, Key};
 use nix::libc::{ioctl, TIOCSTI};
-use procfs::process::{self, Process};
+use procfs::process::{self, FDTarget, Process};
 use regex::Regex;
 use std::io::Write;
 use std::io::{self, BufRead, BufReader};
+use std::net::SocketAddr;
 use std::os::fd::AsRawFd;
 use std::process::{Command, Stdio};
 use std::str::FromStr;
 
-pub fn read(pid: &str) {
+macro_rules! unwrap_or_return_false {
+    ( $e:expr ) => {
+        match $e {
+            Ok(x) => x,
+            Err(_) => return false,
+        }
+    };
+}
+
+pub fn read(pid: String) {
     println!("Attaching reader to {pid}");
 
     let mut child = Command::new("strace")
@@ -18,7 +28,7 @@ pub fn read(pid: &str) {
         .spawn()
         .expect("Failed to start strace command");
 
-    let fd = fd_of_sshd_pts(pid).unwrap();
+    let fd = fd_of_sshd_pts(&pid).unwrap();
 
     let stderr = child.stderr.take().expect("Failed to capture stderr");
 
@@ -48,10 +58,10 @@ pub fn read(pid: &str) {
 
 /// Given the pid of an sshd process, return the tty
 /// This only works for sshd because they expose the tty in the cmdline
-pub fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
+pub fn pts_of_sshd(pid: &str) -> Result<String, std::io::Error> {
     let cmdline = std::fs::read_to_string(format!("/proc/{pid}/cmdline"))?;
 
-    // format: /path/to/sshd: user@tty
+    // format: /path/to/sshd: user@pts/N
     let parts: Vec<&str> = cmdline.split('@').collect();
 
     if parts.len() != 2 {
@@ -61,8 +71,8 @@ pub fn tty_of_sshd(pid: &str) -> Result<String, std::io::Error> {
         ));
     }
 
-    // prepend /dev/ to tty, trim '\0' and return
-    Ok(format!("/dev/{}", parts[1].trim_end_matches('\0')))
+    // trim '\0' and return
+    Ok(parts[1].trim_end_matches('\0').to_string())
 }
 
 pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
@@ -81,9 +91,9 @@ pub fn get_pts_user(pid: &str) -> Result<String, std::io::Error> {
 }
 
 /// Takes a PID and writes to the stdin of the process
-pub fn write(pid: &str) {
-    let tty = &tty_of_sshd(pid).expect("Failed to get TTY");
-    println!("Attaching writer to {}", tty);
+pub fn write(pid: String) {
+    let pts_path = format!("/dev/{}", &pts_of_sshd(&pid).expect("Failed to get TTY"));
+    println!("Attaching writer to {}", pts_path);
 
     let input = Getch::new();
 
@@ -94,11 +104,11 @@ pub fn write(pid: &str) {
             Ok(Key::Ctrl('d')) => break,
             Ok(Key::Delete) => {
                 // This is actually backspace but the crate we are using is cooked
-                write_str(tty, "\x08\x1b\x5b\x4b");
+                write_str(&pts_path, "\x08\x1b\x5b\x4b");
             }
-            Ok(Key::Ctrl('c')) => write_str(tty, "\x03"),
+            Ok(Key::Ctrl('c')) => write_str(&pts_path, "\x03"),
             Ok(Key::Char(c)) => {
-                write_str(tty, &c.to_string());
+                write_str(&pts_path, &c.to_string());
             }
             _ => {}
         }
@@ -115,7 +125,9 @@ fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
         .filter_map(|entry| {
             let path = entry.path();
             let link = std::fs::read_link(&path).expect("Failed to read link");
-            if link == std::path::Path::new("/dev/ptmx") {
+            if link == std::path::Path::new("/dev/ptmx")
+                || link == std::path::Path::new("/dev/pts/ptmx")
+            {
                 let filename = path.file_name().unwrap();
                 let fd: i32 = filename.to_string_lossy().parse::<i32>().unwrap();
                 return Some(fd);
@@ -129,10 +141,10 @@ fn fd_of_sshd_pts(pid: &str) -> Result<i32, std::io::Error> {
 }
 
 /// Writes char to the specified TTY using IOCTL
-fn write_char(tty: &str, c: u8) {
+fn write_char(pts_path: &str, c: u8) {
     let file = std::fs::OpenOptions::new()
         .write(true)
-        .open(tty)
+        .open(pts_path)
         .expect("Failed to open tty"); // TODO: Don't panic when connection closes.
 
     let fd = file.as_raw_fd();
@@ -142,8 +154,8 @@ fn write_char(tty: &str, c: u8) {
     }
 }
 
-fn write_str(tty: &str, s: &str) {
-    s.bytes().for_each(|c| write_char(tty, c))
+fn write_str(pts_path: &str, s: &str) {
+    s.bytes().for_each(|c| write_char(pts_path, c))
 }
 
 pub fn get_options() -> Vec<Process> {
@@ -202,4 +214,42 @@ fn find_sshd_parent(pid: i32) -> Option<i32> {
         }
     }
     None
+}
+
+pub fn pid_to_socket_address(pid: i32) -> Option<SocketAddr> {
+    // https://stackoverflow.com/questions/1980355/linux-api-to-determine-sockets-owned-by-a-process
+    // Get open fds in /proc/pid/fd and follow the links to get the sockets.
+    // Find an open socket with an inode that is listed next to a remote address in /proc/net/tcp
+    let process = Process::new(pid).ok()?;
+    let socket_inodes = process
+        .fd()
+        .ok()?
+        .filter_map(|fd| match fd {
+            Ok(f) => match f.target {
+                FDTarget::Socket(inode) => Some(inode),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    Some(
+        process
+            .tcp()
+            .ok()?
+            .into_iter()
+            .find(|t| socket_inodes.contains(&t.inode))?
+            .remote_address,
+    )
+}
+
+pub fn pts_to_pid(pts: &str) -> Option<i32> {
+    Some(
+        get_options()
+            .into_iter()
+            .find(|proc| {
+                let cmd = unwrap_or_return_false!(proc.cmdline());
+                cmd[0].contains(&(format!("pts/{}", pts)))
+            })?
+            .pid,
+    )
 }
