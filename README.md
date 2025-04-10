@@ -49,7 +49,7 @@ For GNU/Linux release:
 cargo build --release --target x86_64-unknown-linux-gnu
 ```
 
-Using (`cross`)[https://github.com/cross-rs/cross] for GNU/Linux release:
+Using [`cross`](https://github.com/cross-rs/cross) for GNU/Linux release:
 
 ```
 cross build --release --target x86_64-unknown-linux-gnu
