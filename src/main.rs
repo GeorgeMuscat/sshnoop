@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use clap::{Args, Parser};
 use tabled::{settings::Style, Table, Tabled};
 
+mod trace;
 mod tty;
 
 #[derive(Parser)]

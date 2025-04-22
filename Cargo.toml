@@ -9,7 +9,8 @@ edition = "2021"
 hex = "0.4.3"
 regex = "1.10.3"
 getch-rs = "0.2"
-nix = {version = "0.28.0", features = ["term", "fs", "ioctl"]}
+nix = { version = "0.28.0", features = ["term", "fs", "ioctl", "ptrace"] }
 clap = { version = "4.5.2", features = ["derive"] }
 procfs = "0.16.0"
 tabled = "0.18.0"
+thiserror = "2.0.12"
